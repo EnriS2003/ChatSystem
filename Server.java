@@ -5,20 +5,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Server {
     private static final int PORT = 12345;
-    private static Set<ClientHandler> clientSet = ConcurrentHashMap.newKeySet();
+    private static final Set<ClientHandler> availableClients = ConcurrentHashMap.newKeySet();
+    protected static Queue<ClientHandler> waitingClients = new LinkedList<>(); // Lista di attesa per shuffle
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            System.out.println("Server avviato sulla porta: " + PORT);
+            System.out.println("Server avviato sulla porta " + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Nuovo client connesso");
 
                 // Creazione di un ClientHandler per ogni client connesso
-                ClientHandler clientHandler = new ClientHandler(clientSocket, clientSet);
-                clientSet.add(clientHandler);
-
-                // Avvia un thread separato per ogni client
+                ClientHandler clientHandler = new ClientHandler(clientSocket);
+                availableClients.add(clientHandler);  // Aggiunge il client alla lista dei disponibili
                 new Thread(clientHandler).start();
             }
         } catch (IOException e) {
@@ -26,12 +25,38 @@ public class Server {
         }
     }
 
-    // Metodo per fare broadcast dei messaggi a tutti i client
-    static void send_broadcast(String message, ClientHandler sender) {
-        for (ClientHandler client : clientSet) {
-            if (client != sender) {
-                client.sendMessage(message);
+    // Metodo per assegnare un partner di chat a un client
+    static synchronized void assignPartner(ClientHandler client) {
+        // Se ci sono altri client in attesa, accoppia i due client
+        if (!waitingClients.isEmpty()) {
+            ClientHandler partner = waitingClients.poll();  // Ottiene un client in attesa
+            if (partner != client) {
+                // Imposta i partner
+                client.setPartner(partner);
+                partner.setPartner(client);
+
+                client.sendMessage("Sei stato connesso con " + partner.getUsername() + ". Puoi iniziare a chattare.");
+                partner.sendMessage("Sei stato connesso con " + client.getUsername() + ". Puoi iniziare a chattare.");
+            } else {
+                waitingClients.offer(client);  // Rimettilo in attesa se è lo stesso client
+                client.sendMessage("Nessun altro utente disponibile. Attendi che qualcuno si connetta.");
             }
+        } else {
+            // Se nessun altro è in attesa, aggiungi il client alla lista di attesa
+            waitingClients.offer(client);
+            client.sendMessage("Nessun altro utente disponibile. Attendi che qualcuno si connetta.");
+        }
+    }
+
+    // Rimuove un client dalla lista dei disponibili e dalla lista di attesa
+    static synchronized void removeClient(ClientHandler client) {
+        availableClients.remove(client);
+        waitingClients.remove(client);
+        ClientHandler partner = client.getPartner();
+        if (partner != null) {
+            partner.sendMessage("Il tuo partner si è disconnesso.");
+            partner.setPartner(null);
+            waitingClients.offer(partner);  // Rende il partner disponibile
         }
     }
 }
@@ -41,11 +66,22 @@ class ClientHandler implements Runnable {
     private PrintWriter out;
     private BufferedReader in;
     private String username;
-    private static Set<ClientHandler> clientSet;
+    private ClientHandler partner;
 
-    public ClientHandler(Socket socket, Set<ClientHandler> clients) {
+    public ClientHandler(Socket socket) {
         this.socket = socket;
-        clientSet = clients;
+    }
+
+    public void setPartner(ClientHandler partner) {
+        this.partner = partner;
+    }
+
+    public ClientHandler getPartner() {
+        return partner;
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     @Override
@@ -60,25 +96,27 @@ class ClientHandler implements Runnable {
             username = in.readLine();
             System.out.println(username + " si è connesso.");
 
-            // Broadcast di notifica per i nuovi utenti
-            Server.send_broadcast(username + " è entrato nella chat.", this);
+            // Aggiungi alla coda di attesa per essere assegnato a un partner
+            Server.assignPartner(this);
 
             // Ciclo di lettura dei messaggi dal client
             String message;
             while ((message = in.readLine()) != null) {
                 if (message.equalsIgnoreCase("/quit")) {
-                    out.println("Disconnessione...");
+                    //out.println("\n");
+                    out.println("Disconnessione... Speriamo di rivederti presto!");
                     break;
                 } else if (message.equalsIgnoreCase("/shuffle")) {
-                    // Logica di shuffle per riassegnare partner di chat, se implementata
-                    out.println("Cambio partner di chat...");
-                    // Logica di riassegnazione qui
+                    shufflePartner();
+                } else if (partner != null) {
+                    partner.sendMessage(username + ": " + message);
                 } else {
-                    Server.send_broadcast(username + ": " + message, this);
+                    out.println("Attendi che venga assegnato un partner.");
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            //e.printStackTrace();
+            out.println("Sei stato disconnesso con successo, a presto!");
         } finally {
             disconnect();
         }
@@ -89,27 +127,33 @@ class ClientHandler implements Runnable {
         out.println(message);
     }
 
-    // Metodo per fare broadcast dei messaggi a tutti i client connessi
-    private void broadcast(String message, ClientHandler sender) {
-        for (ClientHandler client : clientSet) {
-            if (client != sender) {
-                client.sendMessage(message);
-            }
+    // Metodo per cambiare partner di chat
+    private synchronized void shufflePartner() {
+        if (partner != null) {
+            partner.sendMessage("Il tuo partner si è disconnesso per cercare un nuovo partner.");
+            partner.setPartner(null);
         }
+        out.println("Cambio partner in corso...");
+        Server.assignPartner(this);  // Riassegna un nuovo partner
     }
 
     // Metodo per gestire la disconnessione del client
     private void disconnect() {
         try {
+            if (partner != null) {
+                partner.sendMessage("Il tuo partner si è disconnesso.");
+                partner.setPartner(null);
+                Server.waitingClients.offer(partner);
+            }
+            Server.removeClient(this);  // Rimuove il client dalla lista dei disponibili
             if (socket != null) socket.close();
             if (in != null) in.close();
             if (out != null) out.close();
         } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            clientSet.remove(this);
-            broadcast(username + " si è disconnesso.", this);
-            System.out.println(username + " si è disconnesso.");
+            //e.printStackTrace();
+            out.println("Sei stato disconnesso con successo, a presto!");
         }
+        System.out.println(username + " si è disconnesso.");
     }
+
 }
