@@ -5,50 +5,50 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class Server {
     private static final int PORT = 12345;
-    private static final Set<ClientHandler> availableClients = ConcurrentHashMap.newKeySet();
+    private static final Set<ClientHandler> availableClients = ConcurrentHashMap.newKeySet(); // Lista di clients con connessione attiva
     protected static Queue<ClientHandler> waitingClients = new LinkedList<>(); // Lista di attesa per shuffle
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            System.out.println("Server avviato sulla porta " + PORT);
+            System.out.println("Server avviato sulla porta numero: " + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Nuovo client connesso");
+                //System.out.println("Nuovo client connesso");
 
-                // Creazione di un ClientHandler per ogni client connesso
+                // Per ogni client connesso viene creato un ClientHandler
                 ClientHandler clientHandler = new ClientHandler(clientSocket);
-                availableClients.add(clientHandler);  // Aggiunge il client alla lista dei disponibili
-                new Thread(clientHandler).start();
+                availableClients.add(clientHandler); // Il client viene aggiunto alla lista dei disponibili
+                new Thread(clientHandler).start(); // Viene creato un thread per ogni client in lista
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    // Metodo per assegnare un partner di chat a un client
+    // Metodo per assegnare un partner di conversazione a un client
     static synchronized void assignPartner(ClientHandler client) {
-        // Se ci sono altri client in attesa, accoppia i due client
+        // Se ci sono altri client in attesa, i due client vanno accoppiati per la conversazione
         if (!waitingClients.isEmpty()) {
             ClientHandler partner = waitingClients.poll();  // Ottiene un client in attesa
             if (partner != client) {
-                // Imposta i partner
+                // Imposta i partner in maniera reciproca -> A parla con B e B con A
                 client.setPartner(partner);
                 partner.setPartner(client);
 
+                // Messaggi di notifica per gli utenti
                 client.sendMessage("Sei stato connesso con " + partner.getUsername() + ". Puoi iniziare a chattare.");
                 partner.sendMessage("Sei stato connesso con " + client.getUsername() + ". Puoi iniziare a chattare.");
             } else {
-                waitingClients.offer(client);  // Rimettilo in attesa se è lo stesso client
+                waitingClients.offer(client);  // Il client viene rimesso in lista se è lo stesso
                 client.sendMessage("Nessun altro utente disponibile. Attendi che qualcuno si connetta.");
             }
         } else {
-            // Se nessun altro è in attesa, aggiungi il client alla lista di attesa
-            waitingClients.offer(client);
+            waitingClients.offer(client);// Se nessun altro è in attesa, aggiungi il client alla lista di attesa
             client.sendMessage("Nessun altro utente disponibile. Attendi che qualcuno si connetta.");
         }
     }
 
-    // Rimuove un client dalla lista dei disponibili e dalla lista di attesa
+    // Rimuove un client dalla lista dei disponibili e dalla lista di attesa -> disconnessione totale
     static synchronized void removeClient(ClientHandler client) {
         availableClients.remove(client);
         waitingClients.remove(client);
@@ -115,7 +115,7 @@ class ClientHandler implements Runnable {
                 }
             }
         } catch (IOException e) {
-            //e.printStackTrace();
+            e.printStackTrace();
             out.println("Sei stato disconnesso con successo, a presto!");
         } finally {
             disconnect();
@@ -156,4 +156,7 @@ class ClientHandler implements Runnable {
         System.out.println(username + " si è disconnesso.");
     }
 
+
 }
+
+
