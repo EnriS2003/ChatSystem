@@ -9,7 +9,7 @@ public class Server {
     protected static Queue<ClientHandler> waitingClients = new LinkedList<>(); // Lista di attesa per shuffle
 
     public static void main(String[] args) {
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+        try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName("0.0.0.0"))) {
             System.out.println("Server avviato sulla porta numero: " + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();

@@ -2,7 +2,7 @@ import java.io.*;
 import java.net.*;
 
 public class Client {
-    private static final String SERVER_ADDRESS = "localhost";
+    private static final String SERVER_ADDRESS = "10.12.152.20"; // IP non statico
     private static final int SERVER_PORT = 12345;
 
     public static void main(String[] args) {
