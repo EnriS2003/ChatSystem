@@ -2,11 +2,17 @@ import java.io.*;
 import java.net.*;
 
 public class Client {
-    private static final String SERVER_ADDRESS = "10.12.152.20"; // IP non statico
     private static final int SERVER_PORT = 12345;
 
     public static void main(String[] args) {
-        try (Socket socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
+        String serverAddress = listenForServerBroadcast();
+
+        if (serverAddress == null) {
+            System.out.println("Nessun server trovato. Assicurati che il server sia in esecuzione.");
+            return;
+        }
+
+        try (Socket socket = new Socket(serverAddress, SERVER_PORT);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
@@ -22,7 +28,7 @@ public class Client {
                         System.out.println(message);
                     }
                 } catch (IOException e) {
-                    //e.printStackTrace();
+                    // Handle exception (optional)
                 }
             }).start();
 
@@ -36,5 +42,24 @@ public class Client {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static String listenForServerBroadcast() {
+        try (DatagramSocket udpSocket = new DatagramSocket(9876)) {
+            byte[] buffer = new byte[256];
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+            // Set a timeout for waiting for a broadcast message
+            udpSocket.setSoTimeout(5000); // Wait for 5 seconds
+            udpSocket.receive(packet);
+            String receivedMessage = new String(packet.getData(), 0, packet.getLength());
+            // Assuming the message format is "Server IP:xxx.xxx.xxx.xxx"
+            return receivedMessage.split(":")[1];
+        } catch (SocketTimeoutException e) {
+            System.out.println("Timeout: Nessun messaggio di broadcast ricevuto.");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
