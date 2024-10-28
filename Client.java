@@ -48,18 +48,20 @@ public class Client {
         try (DatagramSocket udpSocket = new DatagramSocket(9876)) {
             byte[] buffer = new byte[256];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-
-            // Set a timeout for waiting for a broadcast message
             udpSocket.setSoTimeout(5000); // Wait for 5 seconds
-            udpSocket.receive(packet);
+
+            System.out.println("Listening for server broadcast...");
+            udpSocket.receive(packet); // This will block until a message is received
+
             String receivedMessage = new String(packet.getData(), 0, packet.getLength());
-            // Assuming the message format is "Server IP:xxx.xxx.xxx.xxx"
-            return receivedMessage.split(":")[1];
+            System.out.println("Received broadcast: " + receivedMessage);
+            return receivedMessage.split(":")[1]; // Extract the IP address
         } catch (SocketTimeoutException e) {
             System.out.println("Timeout: Nessun messaggio di broadcast ricevuto.");
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return null;
+        return null; // Return null if no message is received
     }
+
 }

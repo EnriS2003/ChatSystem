@@ -12,13 +12,16 @@ public class Server {
         // Start the UDP broadcasting thread
         new Thread(() -> {
             try (DatagramSocket udpSocket = new DatagramSocket()) {
-                String broadcastMessage = "Server IP:" + InetAddress.getLocalHost().getHostAddress();
-                byte[] buffer = broadcastMessage.getBytes();
-                DatagramPacket packet = new DatagramPacket(buffer, buffer.length,
-                        InetAddress.getByName("255.255.255.255"), 9876); // Broadcasting to port 9876
+                udpSocket.setBroadcast(true);  // Enable broadcasting
 
                 while (true) {
+                    String broadcastMessage = "Server IP:" + InetAddress.getLocalHost().getHostAddress();
+                    byte[] buffer = broadcastMessage.getBytes();
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length,
+                            InetAddress.getByName("255.255.255.255"), 9876); // Broadcasting to port 9876
+
                     udpSocket.send(packet);
+                    System.out.println("Broadcasting server address: " + broadcastMessage);
                     Thread.sleep(5000); // Broadcast every 5 seconds
                 }
             } catch (IOException | InterruptedException e) {
@@ -26,6 +29,7 @@ public class Server {
             }
         }).start();
 
+        // Start listening for TCP connections
         try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName("0.0.0.0"))) {
             System.out.println("Server avviato sulla porta numero: " + PORT);
             while (true) {
@@ -38,7 +42,6 @@ public class Server {
             e.printStackTrace();
         }
     }
-
 
     // Metodo per assegnare un partner di conversazione a un client
     static synchronized void assignPartner(ClientHandler client) {
