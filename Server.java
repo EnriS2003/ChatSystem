@@ -92,7 +92,6 @@ class ClientHandler implements Runnable {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
             // Chiedi il nome utente
-            out.println("Inserisci il tuo nome utente:");
             username = in.readLine();
             System.out.println(username + " si è connesso.");
 
@@ -132,6 +131,7 @@ class ClientHandler implements Runnable {
         if (partner != null) {
             partner.sendMessage("Il tuo partner si è disconnesso per cercare un nuovo partner.");
             partner.setPartner(null);
+            Server.waitingClients.offer(partner);
         }
         out.println("Cambio partner in corso...");
         Server.assignPartner(this);  // Riassegna un nuovo partner

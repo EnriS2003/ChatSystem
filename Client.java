@@ -11,7 +11,7 @@ public class Client {
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
             BufferedReader userIn = new BufferedReader(new InputStreamReader(System.in));
-            System.out.print("Enter your username: ");
+            System.out.print("Inserisci il tuo nome utente: ");
             String username = userIn.readLine();
             out.println(username);
 
