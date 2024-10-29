@@ -2,13 +2,13 @@ import java.io.*;
 import java.net.*;
 
 public class Client {
-    private static final int SERVER_PORT = 12345; // Port for TCP connections
+    private static final int SERVER_PORT = 12345;
 
     public static void main(String[] args) {
         String serverAddress = listenForServerBroadcast();
 
         if (serverAddress == null) {
-            System.out.println("No server found. Make sure the server is running.");
+            System.out.println("Nessun server trovato. Assicurati che il server sia in esecuzione!");
             return;
         }
 
@@ -17,7 +17,7 @@ public class Client {
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
             BufferedReader userIn = new BufferedReader(new InputStreamReader(System.in));
-            System.out.print("Enter your username: ");
+            System.out.print("Inserisci il tuo nome utente: ");
             String username = userIn.readLine();
             out.println(username);
 
@@ -48,18 +48,20 @@ public class Client {
         try (DatagramSocket udpSocket = new DatagramSocket(9876)) {
             byte[] buffer = new byte[256];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-            udpSocket.setSoTimeout(5000); // 5 seconds timeout
-            System.out.println("Listening for server broadcast...");
+            udpSocket.setSoTimeout(5000); // Wait for 5 seconds
 
-            udpSocket.receive(packet); // Block until a packet is received
+            System.out.println("Listening for server broadcast...");
+            udpSocket.receive(packet); // This will block until a message is received
+
             String receivedMessage = new String(packet.getData(), 0, packet.getLength());
             System.out.println("Received broadcast: " + receivedMessage);
             return receivedMessage.split(":")[1]; // Extract the IP address
         } catch (SocketTimeoutException e) {
-            System.out.println("Timeout: No broadcast message received.");
+            System.out.println("Timeout: Nessun messaggio di broadcast ricevuto.");
         } catch (IOException e) {
             e.printStackTrace();
         }
         return null; // Return null if no message is received
     }
+
 }

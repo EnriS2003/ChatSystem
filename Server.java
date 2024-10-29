@@ -4,7 +4,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Server {
-    private static final int PORT = 12345; // TCP Port for client connections
+    private static final int PORT = 12345;
     private static final Set<ClientHandler> availableClients = ConcurrentHashMap.newKeySet();
     protected static Queue<ClientHandler> waitingClients = new LinkedList<>();
 
@@ -18,7 +18,7 @@ public class Server {
                     String broadcastMessage = "Server IP:" + InetAddress.getLocalHost().getHostAddress();
                     byte[] buffer = broadcastMessage.getBytes();
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length,
-                            InetAddress.getByName("255.255.255.255"), 9876); // Broadcasting to port 12346
+                            InetAddress.getByName("10.12.159.255"), 9876); // Broadcasting to port 9876 on UNIBZ network
 
                     udpSocket.send(packet);
                     System.out.println("Broadcasting server address: " + broadcastMessage);
@@ -31,7 +31,7 @@ public class Server {
 
         // Start listening for TCP connections
         try (ServerSocket serverSocket = new ServerSocket(PORT, 50, InetAddress.getByName("0.0.0.0"))) {
-            System.out.println("Server started on port: " + PORT);
+            System.out.println("Server avviato sulla porta numero: " + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 ClientHandler clientHandler = new ClientHandler(clientSocket);
@@ -42,8 +42,6 @@ public class Server {
             e.printStackTrace();
         }
     }
-
-
 
     // Metodo per assegnare un partner di conversazione a un client
     static synchronized void assignPartner(ClientHandler client) {
