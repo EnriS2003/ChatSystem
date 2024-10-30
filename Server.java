@@ -3,6 +3,12 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+
+/**
+ * Server to manage the connection and the matching operations between clients.
+ * This is a server which operates with TCP protocol, except at the beginning, where UDP is used to make the server
+ * discoverable to the clients.
+ **/
 public class Server {
     private static final int PORT = 12345;
     private static final Set<ClientHandler> availableClients = ConcurrentHashMap.newKeySet(); // List of all clients available into the Chat System

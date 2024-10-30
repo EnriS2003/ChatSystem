@@ -1,6 +1,11 @@
 import java.io.*;
 import java.net.*;
 
+
+/**
+ * The client class takes care about connections to the server.
+ * The client is provided wiht the server's IP address to establish a connection.
+ **/
 public class Client {
     private static final int SERVER_PORT = 12345;
 
