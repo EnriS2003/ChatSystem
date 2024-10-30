@@ -8,7 +8,7 @@ public class Client {
         String serverAddress = listenForServerBroadcast();
 
         if (serverAddress == null) {
-            System.out.println("Nessun server trovato. Assicurati che il server sia in esecuzione!");
+            System.out.println("No server found. Please, make sure the server is running!");
             return;
         }
 
@@ -17,7 +17,7 @@ public class Client {
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
             BufferedReader userIn = new BufferedReader(new InputStreamReader(System.in));
-            System.out.print("Inserisci il tuo nome utente: ");
+            System.out.print("Insert your username: ");
             String username = userIn.readLine();
             out.println(username);
 
@@ -28,7 +28,7 @@ public class Client {
                         System.out.println(message);
                     }
                 } catch (IOException e) {
-                    // Handle exception (optional)
+                    e.printStackTrace();
                 }
             }).start();
 
@@ -57,7 +57,7 @@ public class Client {
             System.out.println("Received broadcast: " + receivedMessage);
             return receivedMessage.split(":")[1]; // Extract the IP address
         } catch (SocketTimeoutException e) {
-            System.out.println("Timeout: Nessun messaggio di broadcast ricevuto.");
+            System.out.println("Timeout: any broadcast message was received.");
         } catch (IOException e) {
             e.printStackTrace();
         }
