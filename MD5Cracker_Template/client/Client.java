@@ -1,59 +1,86 @@
 package client;
 
+import java.io.*;
+import java.net.*;
 import java.rmi.Naming;
-import java.security.MessageDigest;
-import java.util.Arrays;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import server.ServerCommInterface;
 
 public class Client {
 
-	public static void main(String[] args) throws Exception {
+	private static final String[] WORKER_IPS = {"192.168.1.2", "192.168.1.3", "192.168.1.4"};
+	private static final AtomicBoolean solutionFound = new AtomicBoolean(false);
+	private static final Queue<int[]> taskQueue = new ConcurrentLinkedQueue<>(); // Per assegnare chunk dinamici
 
-		if(args.length < 3)
-		{
+	public static void main(String[] args) throws Exception {
+		if (args.length < 3) {
 			System.out.println("Proper Usage is: java Client serverAddress yourOwnIPAddress teamname");
 			System.exit(0);
 		}
-		
+
 		String teamName = args[2];
-	
 		System.out.println("Client starting, listens on IP " + args[1] + " for server callback.");
-
-		// This is crucial, otherwise the RPis will not be reachable from the server.
 		System.setProperty("java.rmi.server.hostname", args[1]);
-		
-		// Initially we have no problem :)
-		byte[] problem = null;
 
-		
-		// Lookup the server
-		ServerCommInterface sci = (ServerCommInterface)Naming.lookup("rmi://" + args[0] + "/server");
-		
-		// Create a communication handler and register it with the server
-		// The communication handler is the object that will receive the tasks from the server
+		ServerCommInterface sci = (ServerCommInterface) Naming.lookup("rmi://" + args[0] + "/server");
 		ClientCommHandler cch = new ClientCommHandler();
 		System.out.println("Client registers with the server");
 		sci.register(teamName, cch);
-		
-		MessageDigest md = MessageDigest.getInstance("MD5");
-		
-		// Now forever solve tasks given by the server
+
 		while (true) {
-			// Wait until getting a problem from the server
-			while (cch.currProblem==null) {Thread.sleep(5);}
-			problem = cch.currProblem;
-			// Then bruteforce try all integers till problemsize
-			for (Integer i=0; i<=cch.currProblemSize; i++) {
-				// Calculate their hash
-				byte[] currentHash = md.digest(i.toString().getBytes());
-				// If the calculated hash equals the one given by the server, submit the integer as solution
-				if (Arrays.equals(currentHash, problem)) {
-					System.out.println("client submits solution");
-					sci.submitSolution(teamName, i.toString());
-					cch.currProblem=null;
-					break;
-				}
+			while (cch.currProblem == null) {
+				Thread.sleep(5);
 			}
+
+			byte[] problem = cch.currProblem;
+			int problemSize = cch.currProblemSize;
+
+			// Popola la task queue con chunk
+			int chunkSize = 1000;
+			for (int i = 0; i <= problemSize; i += chunkSize) {
+				int end = Math.min(i + chunkSize - 1, problemSize);
+				taskQueue.add(new int[]{i, end});
+			}
+
+			// Assegna i chunk iniziali ai worker
+			for (String ip : WORKER_IPS) {
+				assignTaskToWorker(ip, problem);
+			}
+
+			// Ascolta per la soluzione
+			String solution = listenForSolution();
+			if (solution != null) {
+				System.out.println("Solution found: " + solution);
+				sci.submitSolution(teamName, solution);
+				cch.currProblem = null;
+			}
+		}
+	}
+
+	private static void assignTaskToWorker(String ip, byte[] problem) {
+		if (taskQueue.isEmpty()) return;
+
+		int[] range = taskQueue.poll();
+		try (DatagramSocket socket = new DatagramSocket()) {
+			InetAddress address = InetAddress.getByName(ip);
+			String message = Arrays.toString(problem) + "," + range[0] + "," + range[1];
+			byte[] buffer = message.getBytes();
+			DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, 5000);
+			socket.send(packet);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private static String listenForSolution() {
+		try (ServerSocket serverSocket = new ServerSocket(5001)) {
+			Socket socket = serverSocket.accept();
+			BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+			return reader.readLine(); // Legge la soluzione
+		} catch (Exception e) {
+			return null;
 		}
 	}
 }
