@@ -3,6 +3,7 @@ package client;
 import java.io.*;
 import java.net.*;
 import java.rmi.Naming;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -12,7 +13,7 @@ public class Client {
 
 	private static final String[] WORKER_IPS = {"192.168.1.2", "192.168.1.3", "192.168.1.4"};
 	private static final AtomicBoolean solutionFound = new AtomicBoolean(false);
-	private static final Queue<int[]> taskQueue = new ConcurrentLinkedQueue<>(); // Per assegnare chunk dinamici
+	private static final Queue<int[]> taskQueue = new ConcurrentLinkedQueue<>();
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 3) {
@@ -37,20 +38,25 @@ public class Client {
 			byte[] problem = cch.currProblem;
 			int problemSize = cch.currProblemSize;
 
-			// Popola la task queue con chunk
+			// Suddividi il lavoro in chunk
 			int chunkSize = 1000;
 			for (int i = 0; i <= problemSize; i += chunkSize) {
 				int end = Math.min(i + chunkSize - 1, problemSize);
 				taskQueue.add(new int[]{i, end});
 			}
 
-			// Assegna i chunk iniziali ai worker
+			// Il client prende il primo chunk
+			int[] clientChunk = taskQueue.poll();
+			System.out.println("Client processing chunk: " + Arrays.toString(clientChunk));
+			Future<String> clientTask = processClientChunk(problem, clientChunk[0], clientChunk[1]);
+
+			// Assegna i chunk ai worker
 			for (String ip : WORKER_IPS) {
 				assignTaskToWorker(ip, problem);
 			}
 
 			// Ascolta per la soluzione
-			String solution = listenForSolution();
+			String solution = listenForSolution(clientTask);
 			if (solution != null) {
 				System.out.println("Solution found: " + solution);
 				sci.submitSolution(teamName, solution);
@@ -74,13 +80,62 @@ public class Client {
 		}
 	}
 
-	private static String listenForSolution() {
+	private static Future<String> processClientChunk(byte[] problem, int start, int end) {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		return executor.submit(() -> bruteForce(problem, start, end));
+	}
+
+	private static String listenForSolution(Future<String> clientTask) {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
 		try (ServerSocket serverSocket = new ServerSocket(5001)) {
-			Socket socket = serverSocket.accept();
-			BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-			return reader.readLine(); // Legge la soluzione
+			Callable<String> workerListener = () -> {
+				Socket socket = serverSocket.accept();
+				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+				return reader.readLine();
+			};
+
+			Future<String> workerFuture = executor.submit(workerListener);
+
+			// Aspetta il risultato del client o del worker, qualunque arrivi per primo
+			return CompletableFuture.anyOf(
+					CompletableFuture.supplyAsync(() -> {
+						try {
+							return clientTask.get();
+						} catch (Exception e) {
+							return null;
+						}
+					}),
+					CompletableFuture.supplyAsync(() -> {
+						try {
+							return workerFuture.get();
+						} catch (Exception e) {
+							return null;
+						}
+					})
+			).join().toString();
+
 		} catch (Exception e) {
-			return null;
+			e.printStackTrace();
 		}
+
+		return null;
+	}
+
+	private static String bruteForce(byte[] targetHash, int start, int end) {
+		try {
+			MessageDigest md = MessageDigest.getInstance("MD5");
+			for (int i = start; i <= end && !solutionFound.get(); i++) {
+				String candidate = Integer.toString(i);
+				byte[] hash = md.digest(candidate.getBytes());
+				if (Arrays.equals(hash, targetHash)) {
+					solutionFound.set(true);
+					return candidate;
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
 	}
 }
