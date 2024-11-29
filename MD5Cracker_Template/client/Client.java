@@ -3,138 +3,134 @@ package client;
 import java.io.*;
 import java.net.*;
 import java.rmi.Naming;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Queue;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import server.ServerCommInterface;
 
 public class Client {
 
-    private static final String[] WORKER_IPS = {"192.168.1.77"};
     private static final AtomicBoolean solutionFound = new AtomicBoolean(false);
     private static final Queue<int[]> taskQueue = new ConcurrentLinkedQueue<>();
     private static ServerSocket serverSocket;
-
-    public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.out.println("Proper Usage is: java Client serverAddress yourOwnIPAddress teamname");
-            System.exit(0);
+    public static int problemSize;
+    
+        public static int getProblemSize(){
+                return problemSize;
         }
+        public static void setProblemSize(int a){
+                    problemSize = a;
+                return;
+    
+        }
+    
+        public static void main(String[] args) throws Exception {
+            if (args.length < 4) {
+                System.out.println("Usage: java Client serverAddress yourOwnIPAddress teamName workerIPs");
+                System.exit(0);
+            }
+    
+            String serverAddress = args[0];
+            String clientAddress = args[1];
+            String teamName = args[2];
+            String[] workerIPs = args[3].split(","); // Lista degli indirizzi IP dei worker
+    
+            System.setProperty("java.rmi.server.hostname", clientAddress);
+    
+            // Connessione al server RMI
+            ServerCommInterface sci = (ServerCommInterface) Naming.lookup("rmi://" + serverAddress + "/server");
+            ClientCommHandler cch = new ClientCommHandler();
+            sci.register(teamName, cch);
+    
+            serverSocket = new ServerSocket(5001);
+    
+            while (true) {
+                // Aspetta che venga pubblicato un nuovo problema
+                while (cch.currProblem == null) {
+                    Thread.sleep(50);
+                }
+    
+                byte[] problemHash = cch.currProblem;
+                setProblemSize(cch.currProblemSize);
 
-        String teamName = args[2];
-        System.out.println("Client starting, listens on IP " + args[1] + " for server callback.");
-        System.setProperty("java.rmi.server.hostname", args[1]);
+            System.out.println("Received problem: " + Arrays.toString(problemHash) + ", size: " + problemSize);
 
-        ServerCommInterface sci = (ServerCommInterface) Naming.lookup("rmi://" + args[0] + "/server");
-        ClientCommHandler cch = new ClientCommHandler();
-        System.out.println("Client registers with the server");
-        sci.register(teamName, cch);
+            // Prepara i chunk
+            prepareTasks(getProblemSize());
 
-        serverSocket = new ServerSocket(5001);
-
-        while (true) {
-            // Attendi finché non arriva un nuovo problema dal server
-            while (cch.currProblem == null) {
-                Thread.sleep(5);
+            // Assegna i chunk ai worker
+            ExecutorService executor = Executors.newFixedThreadPool(workerIPs.length);
+            for (String workerIP : workerIPs) {
+                executor.execute(() -> handleWorkerTasks(workerIP, problemHash));
             }
 
-            byte[] problem = cch.currProblem;
-            int problemSize = cch.currProblemSize;
-
-            // Divide il lavoro in chunk e li aggiunge alla coda
-            prepareTasks(problemSize);
-
-            // Assegna i task ai worker
-            for (String ip : WORKER_IPS) {
-                assignTaskToWorker(ip, problem);
-            }
-
-            // Ascolta per una soluzione
-            String solution = listenForSolution(problem);
+            // Attendi una soluzione dai worker
+            String solution = waitForSolution(problemHash, sci, teamName);
 
             if (solution != null) {
-                System.out.println("Solution found: " + solution);
-                sci.submitSolution(teamName, solution);
-                cch.currProblem = null;
-                solutionFound.set(true); // Interrompe ulteriori assegnazioni se la soluzione è trovata
+                System.out.println("Solution submitted to server: " + solution);
+                cch.currProblem = null; // Reset per il prossimo problema
+                solutionFound.set(false); // Resetta lo stato per il prossimo problema
             }
+
+            executor.shutdownNow();
         }
     }
 
-    /**
-     * Divide il lavoro in chunk e li aggiunge alla coda dei task.
-     */
     private static void prepareTasks(int problemSize) {
-        int chunkSize = 1000;
+        int chunkSize = 10000;
+        taskQueue.clear();
+
         for (int i = 0; i <= problemSize; i += chunkSize) {
             int end = Math.min(i + chunkSize - 1, problemSize);
             taskQueue.add(new int[]{i, end});
         }
-        System.out.println("Prepared " + taskQueue.size() + " tasks for workers.");
+
+        System.out.println("Prepared tasks: " + taskQueue.size());
     }
 
-    /**
-     * Assegna un task a un worker specifico.
-     */
-    private static void assignTaskToWorker(String ip, byte[] problem) {
-        if (taskQueue.isEmpty()) {
-            System.out.println("No more tasks to assign.");
-            return;
-        }
-
-        int[] range = taskQueue.poll();
-        try (DatagramSocket socket = new DatagramSocket()) {
-            InetAddress address = InetAddress.getByName(ip);
-            String message = (problem != null ? Arrays.toString(problem) : "NO_PROBLEM") + "," + range[0] + "," + range[1];
-            byte[] buffer = message.getBytes();
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, 5000);
-            socket.send(packet);
-            System.out.println("Assigned chunk " + Arrays.toString(range) + " to worker at " + ip);
-        } catch (Exception e) {
-            e.printStackTrace();
+    private static void handleWorkerTasks(String workerIP, byte[] problemHash) {
+        while (!taskQueue.isEmpty() && !solutionFound.get()) {
+            int[] task = taskQueue.poll();
+            if (task == null) return;
+    
+            try (DatagramSocket socket = new DatagramSocket()) {
+                InetAddress address = InetAddress.getByName(workerIP);
+                
+                // Usa Base64 per codificare l'hash del problema
+                String encodedHash = Base64.getEncoder().encodeToString(problemHash);
+                String message = encodedHash + "," + task[0] + "," + task[1];
+                
+                DatagramPacket packet = new DatagramPacket(message.getBytes(), message.length(), address, 5000);
+                socket.send(packet);
+    
+                System.out.println("Assigned task " + Arrays.toString(task) + " to worker at " + workerIP);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
-    /**
-     * Ascolta per una soluzione dai worker.
-     */
-    private static String listenForSolution(byte[] problem) {
-        ExecutorService executor = Executors.newCachedThreadPool();
-
+    private static String waitForSolution(byte[] problemHash, ServerCommInterface sci, String teamName) {
         try {
-            while (!solutionFound.get() && !taskQueue.isEmpty()) {
-                Callable<String> workerListener = () -> {
-                    Socket socket = serverSocket.accept();
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                    String result = reader.readLine();
-                    reader.close();
-                    socket.close();
+            while (!solutionFound.get()) {
+                Socket socket = serverSocket.accept();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                String response = reader.readLine().trim();
+                reader.close();
+                socket.close();
 
-                    if ("TASK_COMPLETED".equals(result)) {
-                        System.out.println("Worker completed task without finding a solution.");
-                        // Riassegna un nuovo task al worker
-                        assignTaskToWorker(socket.getInetAddress().getHostAddress(), problem);
-                        return null;
-                    }
-
-                    return result;
-                };
-
-                Future<String> workerFuture = executor.submit(workerListener);
-
-                // Attendi il risultato dal primo worker che risponde
-                String solution = workerFuture.get();
-                if (solution != null && !"TASK_COMPLETED".equals(solution)) {
-                    return solution;
+                if (response != null && !"TASK_COMPLETED".equals(response)) {
+                    solutionFound.set(true);
+                    sci.submitSolution(teamName, response);
+                    return response;
                 }
             }
-
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            executor.shutdown();
         }
-
         return null;
     }
 }
