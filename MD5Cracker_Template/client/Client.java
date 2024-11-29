@@ -16,42 +16,42 @@ public class Client {
     private static final Queue<int[]> taskQueue = new ConcurrentLinkedQueue<>();
     private static ServerSocket serverSocket;
     public static int problemSize;
-    
+
         public static int getProblemSize(){
                 return problemSize;
         }
         public static void setProblemSize(int a){
                     problemSize = a;
                 return;
-    
+
         }
-    
+
         public static void main(String[] args) throws Exception {
             if (args.length < 4) {
                 System.out.println("Usage: java Client serverAddress yourOwnIPAddress teamName workerIPs");
                 System.exit(0);
             }
-    
+
             String serverAddress = args[0];
             String clientAddress = args[1];
             String teamName = args[2];
             String[] workerIPs = args[3].split(","); // Lista degli indirizzi IP dei worker
-    
+
             System.setProperty("java.rmi.server.hostname", clientAddress);
-    
+
             // Connessione al server RMI
             ServerCommInterface sci = (ServerCommInterface) Naming.lookup("rmi://" + serverAddress + "/server");
             ClientCommHandler cch = new ClientCommHandler();
             sci.register(teamName, cch);
-    
+
             serverSocket = new ServerSocket(5001);
-    
+
             while (true) {
                 // Aspetta che venga pubblicato un nuovo problema
                 while (cch.currProblem == null) {
                     Thread.sleep(50);
                 }
-    
+
                 byte[] problemHash = cch.currProblem;
                 setProblemSize(cch.currProblemSize);
 
@@ -83,9 +83,13 @@ public class Client {
         int chunkSize = 10000;
         taskQueue.clear();
 
-        for (int i = 0; i <= problemSize; i += chunkSize) {
+        for (int i = 0; i < problemSize; i += chunkSize) {
             int end = Math.min(i + chunkSize - 1, problemSize);
             taskQueue.add(new int[]{i, end});
+        }
+
+        if (problemSize % chunkSize != 0) {
+            taskQueue.add(new int[]{problemSize, problemSize}); // Aggiunge solo l'ultimo chunk se necessario
         }
 
         System.out.println("Prepared tasks: " + taskQueue.size());
@@ -95,17 +99,17 @@ public class Client {
         while (!taskQueue.isEmpty() && !solutionFound.get()) {
             int[] task = taskQueue.poll();
             if (task == null) return;
-    
+
             try (DatagramSocket socket = new DatagramSocket()) {
                 InetAddress address = InetAddress.getByName(workerIP);
-                
+
                 // Usa Base64 per codificare l'hash del problema
                 String encodedHash = Base64.getEncoder().encodeToString(problemHash);
                 String message = encodedHash + "," + task[0] + "," + task[1];
-                
+
                 DatagramPacket packet = new DatagramPacket(message.getBytes(), message.length(), address, 5000);
                 socket.send(packet);
-    
+
                 System.out.println("Assigned task " + Arrays.toString(task) + " to worker at " + workerIP);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -134,3 +138,6 @@ public class Client {
         return null;
     }
 }
+
+
+

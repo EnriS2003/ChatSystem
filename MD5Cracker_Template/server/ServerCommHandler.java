@@ -5,6 +5,7 @@ import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -58,7 +59,9 @@ public class ServerCommHandler extends UnicastRemoteObject implements ServerComm
 			}
 		}
 		myClients.removeAll(toRemove);
-		System.out.println("  Problem " + currentSolution + " created and published to " + myClients.size() + " teams.");
+		// System.out.println("  Problem " + currentSolution + " created and published to " + myClients.size() + " teams.");
+		System.out.println("Generated solution: "+currentSolution);
+		System.out.println("Hash: "+ Base64.getEncoder().encodeToString(currentHash));
 	}
 
 	private String generateRandomString(int max) {
