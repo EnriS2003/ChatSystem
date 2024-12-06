@@ -42,6 +42,7 @@ public class Client {
         System.out.println("Coordinator started with server: " + serverAddress);
         System.setProperty("java.rmi.server.hostname", clientAddress);
 
+        // Connessione al server RMI
         ServerCommInterface sci = (ServerCommInterface) Naming.lookup("rmi://" + serverAddress + "/server");
         ClientCommHandler cch = new ClientCommHandler();
         sci.register(teamName, cch);
@@ -49,6 +50,7 @@ public class Client {
         serverSocket = new ServerSocket(1099);
 
         while (true) {
+            // Aspetta un nuovo problema dal server
             while (cch.currProblem == null) {
                 Thread.sleep(50);
             }
@@ -59,14 +61,14 @@ public class Client {
             System.out.println("Received problem: " + Arrays.toString(problemHash) + ", size: " + problemSize);
             prepareTasks(getProblemSize());
 
+            // Esegue i task nei worker
             ExecutorService executor = Executors.newFixedThreadPool(workerIPs.length);
             for (String workerIP : workerIPs) {
-                executor.execute(() -> handleWorkerTasks(workerIP, problemHash));
+                executor.execute(() -> handleWorkerTasks(workerIP, problemHash, sci, teamName));
             }
-            
-            System.out.println("Prima di waitForSolution");
+
+            // Aspetta che la soluzione venga trovata
             String solution = waitForSolution(problemHash, sci, teamName);
-            System.out.println("SOLUTION SENT TO SERVER, dopo waitForSolution");
 
             if (solution != null) {
                 System.out.println("Solution submitted to server: " + solution);
@@ -94,7 +96,7 @@ public class Client {
         System.out.println("Prepared tasks: " + taskQueue.size());
     }
 
-    private static void handleWorkerTasks(String workerIP, byte[] problemHash) {
+    private static void handleWorkerTasks(String workerIP, byte[] problemHash, ServerCommInterface sci, String teamName) {
         int[] task;
         while ((task = taskQueue.poll()) != null && !solutionFound.get()) {
             try (DatagramSocket socket = new DatagramSocket()) {
@@ -114,10 +116,18 @@ public class Client {
                 if (response.matches("\\d+")) {
                     System.out.println("Worker found solution: " + response);
                     solutionFound.set(true);
-                    System.out.println("Solution found true");
+
+                    // Invia la soluzione al server
+                    try {
+                        sci.submitSolution(teamName, response);
+                        System.out.println("Solution sent to server: " + response);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                     return;
                 }
             } catch (SocketTimeoutException e) {
+                System.err.println("Timeout on worker " + workerIP + ", re-adding task: " + Arrays.toString(task));
                 taskQueue.add(task);
                 remainingTasks.incrementAndGet();
             } catch (Exception e) {
@@ -138,15 +148,21 @@ public class Client {
                 String response = reader.readLine().trim();
                 reader.close();
                 socket.close();
-                System.out.println("QUi");
-                if (solutionFound.get()) {
-                    System.out.println("QUo");
 
-                    System.out.println("QUa");
+                // Validazione della soluzione
+                if (isValidSolution(response, problemHash)) {
+                    System.out.println("Valid solution received: " + response);
                     solutionFound.set(true);
-                    sci.submitSolution(teamName, response);
+
+                    // Invia la soluzione al server
+                    try {
+                        sci.submitSolution(teamName, response);
+                        System.out.println("Solution sent to server: " + response);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
                     return response;
-                    
                 }
             }
         } catch (Exception e) {
